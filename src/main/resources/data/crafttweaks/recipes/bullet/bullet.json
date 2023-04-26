@@ -1,0 +1,28 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "simplemusket"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "a",
+    "b",
+    "c"
+  ],
+  "key":{
+    "a": {
+      "item": "crafttweaks:nethersteel_projectile"
+    },
+    "b": {
+      "item": "minecraft:gunpowder"
+    },
+    "c": {
+      "item": "minecraft:paper"
+    }
+  },
+  "result": {
+    "item" : "simplemusket:netherite_bullet"
+  }
+}

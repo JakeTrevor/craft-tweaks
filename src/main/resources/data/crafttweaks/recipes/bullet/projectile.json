@@ -1,0 +1,24 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "create"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "createbigcannons"
+    }
+  ],
+  "type": "create:pressing",
+  "ingredients": [
+    {
+      "item": "createbigcannons:nethersteel_ingot"
+    }
+  ],
+  "results": [
+    {
+      "item": "crafttweaks:nethersteel_projectile",
+      "count": 1
+    }
+  ]
+}
