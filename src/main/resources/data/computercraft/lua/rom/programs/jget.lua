@@ -1,8 +1,10 @@
 do --settings block
     settings.define("JGET.outdir", { description = "Directory packages are installed into", default = "./packages/" })
     settings.define("JGET.endpoint",
-        { description = "Location of JGET webserver. Uses master server as default",
-            default = "https://jget.vercel.app/api/package/" })
+        {
+            description = "Location of JGET webserver. Uses master server as default",
+            default = "https://jget.trevor.business/api/package/"
+        })
 end
 
 local endpoint = settings.get("JGET.endpoint")
@@ -29,12 +31,10 @@ local function install(dirname, files)
             local file = fs.open(file_path, "w")
             file.write(value)
             file.close()
-
         else
             --its a directory
             install(file_path, value)
         end
-
     end
 end
 
@@ -47,8 +47,71 @@ local function list()
         print("no packages installed")
         return
     end
+
+    local pkgs = get_installed_packages()
+
+    if (#pkgs == 0) then
+        print("no packages installed")
+        return
+    end
+
     print("installed packages:")
-    print(textutils.serialise(get_installed_packages()))
+    print(textutils.serialise(pkgs))
+end
+
+local function handle_http_errors(response, reason, failRes)
+    if not response then
+        if not failRes then
+            print("error: " .. reason)
+            return nil
+        end
+
+        local data = textutils.unserialiseJSON(failRes.readAll())
+
+        print("error: " .. data.message)
+        return nil
+    end
+
+
+    if response.getResponseCode() ~= 200 then
+        print("error: code " .. response.getResponseCode())
+        return nil
+    end
+
+    local data = textutils.unserialiseJSON(response.readAll())
+
+    if not data then
+        print("error - request did not provide data")
+    end
+
+    return data
+end
+
+local function fetch_pkg(pkg_name)
+    print("getting package " .. pkg_name)
+
+
+    local target_url = endpoint .. pkg_name
+
+    local data = handle_http_errors(http.get {
+        url = target_url, method = "GET",
+    })
+
+    if not data then return false end
+
+    local files = textutils.unserialiseJSON(data["files"])
+
+    ensure(outdir)
+
+    local install_dir = fs.combine(outdir, pkg_name)
+    install(install_dir, files)
+
+    local dependencies = data["dependencies"]
+    for _, dep in ipairs(dependencies) do
+        fetch_pkg(dep)
+    end
+
+    return true
 end
 
 local function get(arg)
@@ -59,48 +122,9 @@ local function get(arg)
         return
     end
 
-    print("getting package " .. package)
-
-
-    local target_url = endpoint .. package
-
-    local response, reason, failRes = http.get {
-        url = target_url, method = "GET",
-    }
-
-    if not response then
-        if not failRes then
-            print("error: " .. reason)
-            return
-        end
-
-        local data = textutils.unserialiseJSON(failRes.readAll())
-
-        print("error: " .. data.message)
-        return
+    if fetch_pkg(package) then
+        print("success!")
     end
-
-
-    if response.getResponseCode() ~= 200 then
-        print("error: code ".. response.getResponseCode())
-        return
-    end
-
-    local data = textutils.unserialiseJSON(response.readAll())
-
-    if not data then
-        print("error")
-    end
-
-
-    local files = textutils.unserialiseJSON(data["files"])
-
-    ensure(outdir)
-
-    local install_dir = fs.combine(outdir, package)
-    install(install_dir, files)
-
-    print("success!")
 end
 
 local function init(args)
@@ -137,6 +161,24 @@ local function get_files(path)
     return data
 end
 
+local function get_dependencies(path)
+    local dep_file = shell.resolve(path .. "/DEPENDENCIES.txt")
+    local dep_arr = {}
+    local head = 1
+
+    if (not fs.exists(dep_file)) then return textutils.empty_json_array end
+
+    local handle = fs.open(dep_file, "r")
+    local next_line = handle.readLine();
+    while (next_line) do
+        dep_arr[head] = next_line
+        head = head + 1;
+        next_line = handle.readLine()
+    end
+
+    return dep_arr or textutils.empty_json_array
+end
+
 local function put(args)
     local package_name = args[2]
 
@@ -159,32 +201,24 @@ local function put(args)
     local files = get_files(current_directory)
 
     data["files"] = textutils.serialiseJSON(files)
+    data["dependencies"] = get_dependencies(current_directory)
 
-    json_data = textutils.serialiseJSON(data)
+    local json_data = textutils.serialiseJSON(data)
 
-    --make put request
-    -- Todo update this
     local target_url = endpoint .. package_name
 
-    print(target_url)
+    print("uploading package " .. package_name)
 
     local args = {
-        url = target_url, body = json_data, method = "PUT",
+        url = target_url,
+        body = json_data,
+        method = "PUT",
         headers = { ["Content-Type"] = "application/json" }
     }
-    local response, reason, _ = http.post(args)
 
-    if not response then
-        print("Error: " .. reason)
-        return
-    end
+    handle_http_errors(http.post(args))
 
-    if response.getResponseCode() == 200 then
-        print("Package uploaded successfully")
-    else
-        print("Error: code " .. response.getResponseCode())
-    end
-
+    print("success!")
 end
 
 local help_dict = {
@@ -194,7 +228,7 @@ list
 
 useage:
 'jget list'
-]]   ,
+]],
     ["get"] = [[
 get
 - requests the specified package from the JGET repo
@@ -202,7 +236,7 @@ get
 
 useage:
 'jget get <package name>'
-]]   ,
+]],
     ["put"] = [[
 put
 - specify a package to to be uploaded
@@ -216,7 +250,7 @@ put
 
     useage:
 'jget put <package name>'
-]]   ,
+]],
     ["init"] = [[
 init
 - creates a directory in the `/packages/` folder
@@ -224,7 +258,7 @@ init
 
     useage:
 'jget init <package name>'
-]]   ,
+]],
     ["help"] = [[
 help
 - you are already using this command!
@@ -235,9 +269,10 @@ https://jget.trevor.business/get_jget/
 
 useage:
 'jget help <command>'
-]]   ,
+]],
 }
 
+---@param arg string[]
 local function jget_help(arg)
     local command = arg[2]
 
